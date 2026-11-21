@@ -19,6 +19,29 @@ class CitationFormattingTests(unittest.TestCase):
         self.assertEqual(len(refs), 2)
         self.assertEqual([r['number'] for r in refs], [1, 2])
 
+    def test_legacy_source_without_extension(self):
+        opaque = 'ACFrOgD0s_S5pTRN7QPhMifbBLBwNIfaewhy5ej7tpT3go-N_FksdAElP62qOC5C2YfdhWZdYxPIABBGI7X2TifCO'
+        raw = f'**Evidence:** text [{opaque}, p. 8]. More [{opaque}, p. 8].'
+        body, refs = format_answer_citations(raw)
+        self.assertEqual(body.count('atlas-citation'), 2)
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0]['page'], '8')
+        self.assertIn('Uploaded document 1', render_reference_key(refs))
+
+    def test_new_compact_source_ids_use_real_metadata(self):
+        matches = [{'source': 'Sample.pdf', 'page': 3}, {'source': 'Long File Name.pdf', 'page': 6}]
+        body, refs = format_answer_citations('One [S2], two [S1], three [S2]', matches)
+        self.assertEqual(body.count('atlas-citation'), 3)
+        self.assertEqual(len(refs), 2)
+        self.assertEqual(refs[0]['filename'], 'Long File Name.pdf')
+        self.assertEqual(refs[1]['filename'], 'Sample.pdf')
+        self.assertEqual(refs[0]['page'], '6')
+
+    def test_invalid_source_id_not_converted(self):
+        body, refs = format_answer_citations('Unsupported [S9]', [{'source': 'foo.pdf', 'page': 1}])
+        self.assertEqual(refs, [])
+        self.assertIn('[S9]', body)
+
     def test_html_escape_in_model_output(self):
         text = '<script>alert("test")</script> [foo.pdf, p. 2]'
         body, _ = format_answer_citations(text)
