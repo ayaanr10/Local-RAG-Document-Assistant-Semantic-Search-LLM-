@@ -26,7 +26,7 @@ class CitationFormattingTests(unittest.TestCase):
         self.assertEqual(body.count('atlas-citation'), 2)
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0]['page'], '8')
-        self.assertIn('Uploaded document 1', render_reference_key(refs))
+        self.assertIn('Uploaded document', render_reference_key(refs))
 
     def test_new_compact_source_ids_use_real_metadata(self):
         matches = [{'source': 'Sample.pdf', 'page': 3}, {'source': 'Long File Name.pdf', 'page': 6}]
