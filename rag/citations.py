@@ -23,7 +23,7 @@ def _short_name(filename: str, number: int) -> str:
     if len(filename) > 64:
         # Some uploaded filenames are opaque Google Drive IDs, not human labels.
         if re.match(r'^[A-Za-z0-9_+=-]{64,}(?:\.(?:pdf|txt|md))?$', filename):
-            return f'Uploaded document {number}'
+            return 'Uploaded document'
         suffix = Path(filename).suffix
         allowed_suffix = suffix if suffix.lower() in ('.pdf', '.md', '.txt') else ''
         return filename[:38] + '…' + allowed_suffix
