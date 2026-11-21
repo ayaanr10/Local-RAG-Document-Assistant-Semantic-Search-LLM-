@@ -96,9 +96,9 @@ except Exception as exc:
     st.stop()
 
 
-def show_answer(text: str) -> None:
+def show_answer(text: str, context_matches=()) -> None:
     """Display readable answer text with compact, deduplicated source markers."""
-    body, sources = format_answer_citations(text)
+    body, sources = format_answer_citations(text, context_matches)
     st.markdown(body, unsafe_allow_html=True)
     if sources:
         st.markdown(render_reference_key(sources), unsafe_allow_html=True)
@@ -193,7 +193,7 @@ with chat_tab:
     for item in st.session_state.messages:
         with st.chat_message(item['role']):
             if item['role'] == 'assistant':
-                show_answer(item['text'])
+                show_answer(item['text'], item.get('source_matches', ()))
             else:
                 st.markdown(item['text'])
             if item.get('matches'):
@@ -220,11 +220,11 @@ with chat_tab:
                     t1=time.perf_counter()
                     result=answer_question(question,matches,max_context_chars=context_budget)
                     generation_ms=(time.perf_counter()-t1)*1000
-                show_answer(result.text)
+                show_answer(result.text, result.source_matches)
                 with st.expander('View supporting passages', expanded=result.mode!='gemini'):
                     show_sources(matches)
                 st.session_state.messages.append({'role':'assistant','text':result.text,
-                    'matches':matches})
+                    'matches':matches, 'source_matches':result.source_matches})
                 st.session_state.telemetry.append({
                     'time':datetime.now().strftime('%H:%M:%S'), 'question':question,
                     'retrieval_ms':retrieval_ms,'generation_ms':generation_ms,
