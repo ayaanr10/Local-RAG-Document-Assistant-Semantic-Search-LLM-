@@ -1,0 +1,7 @@
+question,expected_source,expected_page
+What is retrieval-augmented generation?,rag_fundamentals.md,1
+How does semantic embedding search work?,rag_fundamentals.md,1
+What does Hit Rate at K measure?,rag_fundamentals.md,1
+What is the difference between precision and recall?,ml_fundamentals.txt,1
+What is macro F1?,ml_fundamentals.txt,1
+How should a test set be used?,ml_fundamentals.txt,1

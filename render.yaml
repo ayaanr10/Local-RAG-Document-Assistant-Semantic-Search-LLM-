@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: atlas-rag-dashboard
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-render.txt
+    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PUBLIC_DEMO
+        value: "1"
+      - key: EMBEDDING_BACKEND
+        value: fastembed
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+    healthCheckPath: /_stcore/health

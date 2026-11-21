@@ -1,0 +1,9 @@
+Machine Learning — Sample Notes
+
+Supervised learning uses labelled examples to train predictive models. Classification predicts a discrete category, such as hockey or medicine. Regression predicts a numerical target such as price or temperature. Unsupervised learning searches for patterns without predefined target labels.
+
+Precision asks: of the cases predicted positive, how many were correct? Precision equals true positives divided by true positives plus false positives. Recall asks: of all actual positive cases, how many were identified? Recall equals true positives divided by true positives plus false negatives.
+
+F1-score combines precision and recall using their harmonic mean. Macro F1 computes the F1 for each class and averages those class scores equally, giving the same importance to every class. Accuracy measures the fraction of all predictions that are correct.
+
+Hyperparameter tuning compares settings such as the alpha smoothing value in Multinomial Naive Bayes. Validation data is used to compare settings. The final held-out test data should not be used repeatedly to select model settings.
