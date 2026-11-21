@@ -37,8 +37,11 @@ class FastEmbedAdapter:
 def clean_filename(filename: str) -> str:
     """Reduce user-supplied filenames to a safe, readable basename."""
     base = filename.replace('\\', '/').split('/')[-1]
-    base = re.sub(r'[^a-zA-Z0-9_. -]', '_', base).strip(' .')[:90]
-    return base or 'untitled'
+    base = re.sub(r'[^a-zA-Z0-9_. -]', '_', base).strip(' .')
+    suffix = Path(base).suffix.lower()
+    if suffix in ('.pdf', '.md', '.txt', '.markdown'):
+        return (base[:-len(suffix)][:90-len(suffix)] + suffix) or 'untitled'
+    return base[:90] or 'untitled'
 
 
 class RAGEngine:
