@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 from datetime import datetime
 import io
+import logging
 import os
 from pathlib import Path
 import time
@@ -88,7 +89,8 @@ namespace = f"session_{st.session_state.session_id}" if PUBLIC_DEMO else 'rag_do
 try:
     engine = get_engine(namespace)
 except Exception as exc:
-    st.error('Could not initialize ChromaDB. Check server logs and installed requirements.')
+    logging.exception('Atlas RAG ChromaDB startup failed')
+    st.error('Could not initialize ChromaDB. Check Render Logs for the underlying exception.')
     if not PUBLIC_DEMO:
         st.exception(exc)
     st.stop()
