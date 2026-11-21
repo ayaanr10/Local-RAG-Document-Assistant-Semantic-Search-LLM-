@@ -134,18 +134,35 @@ with st.sidebar:
     st.divider()
     st.subheader('📁 Knowledge sources')
     files = st.file_uploader('PDF, Markdown or plain text', type=['pdf','md','txt'],
-                             accept_multiple_files=True, help='PDF limit: 20 MB; TXT/MD: 5 MB each')
-    if st.button('⬆ Index selected files', type='primary', use_container_width=True, disabled=not files):
-        for file in files or []:
-            try:
-                if PUBLIC_DEMO and engine.stats()['documents'] >= 5:
-                    st.warning('Public demo limit: at most five indexed documents per browser session.')
-                    break
-                with st.spinner(f'Indexing {file.name}…'):
-                    result = engine.add_document(file.name, file.getvalue())
-                st.success(f"{result['name']}: {result['status']} · {result['chunks']} chunks")
-            except Exception as exc:
-                st.error(f'{file.name}: {exc}')
+                             accept_multiple_files=True, key='knowledge_sources',
+                             help='PDF limit: 20 MB; TXT/MD: 5 MB each')
+    if files:
+        total_kb = sum(file.size for file in files) / 1024
+        st.caption(f'Atlas received {len(files)} file(s) · {total_kb:.1f} KB ready to index.')
+    else:
+        st.caption('No file has reached Atlas yet. Select a file above and wait for the upload to finish.')
+
+    # Keep this button clickable even when the uploader state is empty.
+    # That lets the app explain the problem instead of showing a disabled control.
+    if st.button('⬆ Index selected files', type='primary', use_container_width=True,
+                 key='index_knowledge_sources'):
+        if not files:
+            st.warning('Atlas has not received a file in this browser session. Remove the file from the uploader, select it again, wait for the upload to finish, and retry. If it still fails, refresh this page and upload it once more.')
+        else:
+            indexed_any = False
+            for file in files:
+                try:
+                    if PUBLIC_DEMO and engine.stats()['documents'] >= 5:
+                        st.warning('Public demo limit: at most five indexed documents per browser session.')
+                        break
+                    with st.spinner(f'Indexing {file.name}…'):
+                        result = engine.add_document(file.name, file.getvalue())
+                    st.success(f"{result['name']}: {result['status']} · {result['chunks']} chunks")
+                    indexed_any = indexed_any or result['status'] == 'indexed'
+                except Exception as exc:
+                    st.error(f'{file.name}: {exc}')
+            if indexed_any:
+                st.rerun()
     with st.expander('Demo tools', expanded=False):
         if st.button('Load sample documents', use_container_width=True):
             try:
