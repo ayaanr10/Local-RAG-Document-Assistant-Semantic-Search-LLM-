@@ -10,6 +10,7 @@ import os
 from functools import cached_property
 from pathlib import Path
 import re
+from threading import Lock
 
 from rag.chunking import chunk_pages
 from rag.pdf_reader import extract_pages
@@ -23,15 +24,30 @@ class FastEmbedAdapter:
     """Small local ONNX-based MiniLM backend for resource-limited hosting."""
     def __init__(self) -> None:
         from fastembed import TextEmbedding
-        self.model = TextEmbedding(model_name=MODEL_NAME)
+        self.model = TextEmbedding(model_name=MODEL_NAME, threads=1, enable_cpu_mem_arena=False)
+        self._encode_lock = Lock()
 
     def encode(self, texts: list[str], normalize_embeddings: bool = True):
         import numpy as np
-        vectors = np.asarray(list(self.model.embed(texts)), dtype=np.float32)
+        with self._encode_lock:
+            vectors = np.asarray(list(self.model.embed(texts, batch_size=4, parallel=None)), dtype=np.float32)
         if normalize_embeddings and vectors.size:
             norms = np.linalg.norm(vectors, axis=1, keepdims=True)
             vectors /= np.maximum(norms, 1e-12)
         return vectors
+
+
+# Share the expensive model across browser sessions, not the document collections.
+_fastembed_lock = Lock()
+_fastembed_model = None
+
+
+def get_fastembed_model():
+    global _fastembed_model
+    with _fastembed_lock:
+        if _fastembed_model is None:
+            _fastembed_model = FastEmbedAdapter()
+        return _fastembed_model
 
 
 def clean_filename(filename: str) -> str:
@@ -57,7 +73,7 @@ class RAGEngine:
     @cached_property
     def encoder(self):
         if os.getenv('EMBEDDING_BACKEND', 'sentence-transformers') == 'fastembed':
-            return FastEmbedAdapter()
+            return get_fastembed_model()
         from sentence_transformers import SentenceTransformer
         return SentenceTransformer(MODEL_NAME)
 
