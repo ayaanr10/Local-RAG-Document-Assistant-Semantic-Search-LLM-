@@ -21,20 +21,55 @@ MAX_PDF_BYTES = 20 * 1024 * 1024
 
 
 class FastEmbedAdapter:
-    """Small local ONNX-based MiniLM backend for resource-limited hosting."""
+    """Quantized MiniLM ONNX inference for the 512 MiB Render instance.
+
+    Use the runtime and tokenizer directly to avoid loading the full-size
+    FastEmbed model and reduce peak memory during model initialization.
+    """
     def __init__(self) -> None:
-        from fastembed import TextEmbedding
-        self.model = TextEmbedding(model_name=MODEL_NAME, threads=1, enable_cpu_mem_arena=False)
+        import onnxruntime as ort
+        from huggingface_hub import hf_hub_download
+        from tokenizers import Tokenizer
+
+        revision = '855bcf54d21334332f75db10bdd48970ff0ef547'
+        model_path = hf_hub_download(MODEL_NAME, 'onnx/model_quint8_avx2.onnx', revision=revision)
+        tokenizer_path = hf_hub_download(MODEL_NAME, 'tokenizer.json', revision=revision)
+        self.tokenizer = Tokenizer.from_file(tokenizer_path)
+        self.tokenizer.enable_truncation(max_length=256)
+        self.tokenizer.enable_padding(pad_id=0, pad_token='[PAD]')
+
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        options.enable_cpu_mem_arena = False
+        options.enable_mem_pattern = False
+        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+        self.model = ort.InferenceSession(model_path, sess_options=options,
+                                          providers=['CPUExecutionProvider'])
+        self._input_names = {item.name for item in self.model.get_inputs()}
         self._encode_lock = Lock()
 
     def encode(self, texts: list[str], normalize_embeddings: bool = True):
         import numpy as np
+        output = []
         with self._encode_lock:
-            vectors = np.asarray(list(self.model.embed(texts, batch_size=4, parallel=None)), dtype=np.float32)
-        if normalize_embeddings and vectors.size:
-            norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-            vectors /= np.maximum(norms, 1e-12)
-        return vectors
+            for offset in range(0, len(texts), 2):
+                tokens = self.tokenizer.encode_batch(texts[offset:offset + 2])
+                mask = np.asarray([t.attention_mask for t in tokens], dtype=np.int64)
+                inputs = {
+                    'input_ids': np.asarray([t.ids for t in tokens], dtype=np.int64),
+                    'attention_mask': mask,
+                    'token_type_ids': np.asarray([t.type_ids for t in tokens], dtype=np.int64),
+                }
+                hidden = self.model.run(['last_hidden_state'],
+                    {k: v for k, v in inputs.items() if k in self._input_names})[0]
+                weights = mask[..., None].astype(np.float32)
+                pooled = (hidden * weights).sum(axis=1) / np.maximum(weights.sum(axis=1), 1.0)
+                if normalize_embeddings:
+                    pooled /= np.maximum(np.linalg.norm(pooled, axis=1, keepdims=True), 1e-12)
+                output.append(pooled.astype(np.float32))
+        return np.concatenate(output, axis=0) if output else np.empty((0, 384), dtype=np.float32)
 
 
 # Share the expensive model across browser sessions, not the document collections.
@@ -65,6 +100,9 @@ class RAGEngine:
         import chromadb
         Path(db_path).mkdir(parents=True, exist_ok=True)
         self.client = chromadb.PersistentClient(path=str(db_path))
+        # Avoid mixing old full-precision vectors and new quantized vectors.
+        if os.getenv('EMBEDDING_BACKEND', 'sentence-transformers') == 'fastembed':
+            collection_name += '_q8'
         self.collection = self.client.get_or_create_collection(
             name=collection_name, embedding_function=None,
             metadata={'hnsw:space': 'cosine'},
