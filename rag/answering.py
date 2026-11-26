@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import os
+import logging
 from rag.evaluation import estimate_tokens, select_context
 
 ABSTAIN = "I couldn't find that information in the uploaded documents."
@@ -47,14 +48,46 @@ def answer_question(question: str, matches: list[dict], max_context_chars: int =
             'retrieval-only', estimated_input_tokens=estimated, used_sources=len(selected),
             source_matches=tuple(selected))
     from google import genai
-    client = genai.Client(api_key=key)
-    response = client.models.generate_content(
-        model=os.getenv('GEMINI_MODEL', 'gemini-3.5-flash'), contents=prompt)
-    usage = getattr(response, 'usage_metadata', None)
+    from google.genai import types, errors
+    # Bound each request and avoid the SDK's long automatic retry sequence.
+    models = list(dict.fromkeys([
+        os.getenv('GEMINI_FALLBACK_MODEL', 'gemini-3.5-flash-lite'),
+        os.getenv('GEMINI_MODEL', 'gemini-3.6-flash'),
+    ]))
+    try:
+        with genai.Client(api_key=key, http_options=types.HttpOptions(
+            timeout=12000, retry_options=types.HttpRetryOptions(attempts=1)
+        )) as client:
+            for model in models:
+                try:
+                    response = client.models.generate_content(
+                        model=model, contents=prompt,
+                        config=types.GenerateContentConfig(
+                            max_output_tokens=600,
+                            thinking_config=types.ThinkingConfig(thinking_level='minimal')))
+                    if not response.text:
+                        logging.warning('Gemini returned no text for %s', model)
+                        continue
+                    usage = getattr(response, 'usage_metadata', None)
+                    logging.info('Gemini generation succeeded with %s', model)
+                    return AnswerResult(
+                        response.text, 'gemini', estimated,
+                        getattr(usage, 'prompt_token_count', None),
+                        getattr(usage, 'candidates_token_count', None), len(selected), tuple(selected))
+                except errors.APIError as exc:
+                    logging.warning('Gemini %s returned HTTP %s', model, exc.code)
+                    if exc.code in (401, 403):
+                        break
+                except Exception as exc:
+                    logging.warning('Gemini %s failed: %s', model, type(exc).__name__)
+    except Exception as exc:
+        logging.warning('Gemini client failed: %s', type(exc).__name__)
     return AnswerResult(
-        response.text or 'The model returned no answer.', 'gemini', estimated,
-        getattr(usage, 'prompt_token_count', None),
-        getattr(usage, 'candidates_token_count', None), len(selected), tuple(selected))
+        'Gemini is temporarily unavailable or its quota has been reached. '
+        'The relevant passages were retrieved successfully; see the supporting '
+        'passages below. This is retrieval-only output, not an AI-generated answer.',
+        'retrieval-only', estimated_input_tokens=estimated, used_sources=len(selected),
+        source_matches=tuple(selected))
 
 
 def generate_answer(question: str, matches: list[dict]) -> tuple[str, str]:
