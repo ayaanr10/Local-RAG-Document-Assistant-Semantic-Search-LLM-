@@ -149,7 +149,6 @@ with st.sidebar:
         if not files:
             st.warning('Atlas has not received a file in this browser session. Remove the file from the uploader, select it again, wait for the upload to finish, and retry. If it still fails, refresh this page and upload it once more.')
         else:
-            indexed_any = False
             for file in files:
                 try:
                     if PUBLIC_DEMO and engine.stats()['documents'] >= 5:
@@ -158,18 +157,16 @@ with st.sidebar:
                     with st.spinner(f'Indexing {file.name}…'):
                         result = engine.add_document(file.name, file.getvalue())
                     st.success(f"{result['name']}: {result['status']} · {result['chunks']} chunks")
-                    indexed_any = indexed_any or result['status'] == 'indexed'
                 except Exception as exc:
+                    logging.exception('Atlas indexing failed for %s', file.name)
                     st.error(f'{file.name}: {exc}')
-            if indexed_any:
-                st.rerun()
+            # Continue this run: stats below reads the updated collection immediately.
     with st.expander('Demo tools', expanded=False):
         if st.button('Load sample documents', use_container_width=True):
             try:
                 with st.spinner('Indexing sample documents…'):
                     demo_load()
                 st.success('Sample documents added to your knowledge base.')
-                st.rerun()
             except Exception as exc:
                 st.error(f'Unable to index samples: {exc}')
 
@@ -221,8 +218,10 @@ with chat_tab:
     if demo_question_limit:
         st.info('Public demo question limit reached for this browser session (12 questions).')
     question = st.chat_input('Ask a question about your documents…',
-                             disabled=not stats['documents'] or demo_question_limit)
-    if question and stats['documents']:
+                             key='atlas_question', disabled=demo_question_limit)
+    if question and not stats['documents']:
+        st.warning('No documents are indexed yet. Upload a file and click Index selected files, then ask again.')
+    elif question and not demo_question_limit:
         st.session_state.messages.append({'role':'user','text':question})
         with st.chat_message('user'):
             st.markdown(question)
@@ -250,7 +249,10 @@ with chat_tab:
                     'actual_output_tokens':result.actual_output_tokens,
                     'sources':result.used_sources,'mode':result.mode})
             except Exception as exc:
-                st.error(f'Question failed: {exc}')
+                logging.exception('Atlas question failed')
+                error_message = 'Question failed. Please retry; if it continues, check the server logs.' if PUBLIC_DEMO else f'Question failed: {exc}'
+                st.session_state.messages.append({'role':'assistant','text':error_message})
+                st.error(error_message)
         st.rerun()
 
     with st.expander('Retrieval details', expanded=False):
